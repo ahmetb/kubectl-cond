@@ -170,14 +170,14 @@ func statusColor(status metav1.ConditionStatus) func(string) string {
 }
 
 func formatConditionDetails(cond GenericCondition) string {
-	color := statusColor(cond.Status)
+	colorize := statusColor(cond.Status)
 	var detail string
 	if cond.Reason != "" {
-		detail += fmt.Sprintf("%s\n", color(bold.Sprint(cond.Reason)))
+		detail += fmt.Sprintf("%s\n", colorize(bold.Sprint(cond.Reason)))
 	}
 	if cond.Message != "" {
-		cond.Message = wrapString(cond.Message, 80)
-		cond.Message = color("(" + cond.Message + ")")
+		cond.Message = wrapString(cond.Message, 80, colorize)
+		cond.Message = colorize("(") + cond.Message + colorize(")")
 		detail += fmt.Sprintf("%s\n", cond.Message)
 	}
 	if cond.LastTransitionTime != nil {
@@ -220,17 +220,29 @@ func byCondition(i, j GenericCondition) bool {
 }
 
 // wrapString wraps the input string to a given width n, splitting long words as needed.
-func wrapString[T ~string](input T, n int) T {
+func wrapString[T ~string](input T, n int, colorize func(string) string) T {
 	if n <= 0 {
 		return input
 	}
 
 	var result strings.Builder
-	for i, char := range input {
-		if i > 0 && i%n == 0 {
+	var line strings.Builder
+	lineLength := 0
+
+	for _, char := range input {
+		line.WriteRune(char)
+		lineLength++
+
+		if lineLength >= n || char == '\n' {
+			result.WriteString(colorize(line.String()))
+			line.Reset()
 			result.WriteString("\n")
+			lineLength = 0
 		}
-		result.WriteRune(char)
+	}
+
+	if line.Len() > 0 {
+		result.WriteString(colorize(line.String()))
 	}
 
 	return T(result.String())
