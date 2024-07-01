@@ -52,7 +52,6 @@ func main() {
 		fmt.Printf("command failed: %v\n", err)
 		os.Exit(1)
 	}
-
 }
 
 func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command, args []string) error {
@@ -66,7 +65,7 @@ func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command
 			Do().
 			Visit(func(info *resource.Info, err error) error {
 				if err != nil {
-					return err
+					return fmt.Errorf("error visiting resource: %w", err)
 				}
 				return printObject(info.Object)
 			})
@@ -84,46 +83,18 @@ type GenericCondition struct {
 }
 
 func printObject(obj runtime.Object) error {
-	// Convert the object to unstructured if it is not already
-	unstructuredObj, ok := obj.(*unstructured.Unstructured)
-	if !ok {
-		// Object is not unstructured, convert it
-		objJSON, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-		if err != nil {
-			return fmt.Errorf("failed to convert object to unstructured: %w", err)
-		}
-		unstructuredObj = &unstructured.Unstructured{Object: objJSON}
-	}
-
-	// Extract status.conditions from the unstructured object
-	conditions, found, err := unstructured.NestedSlice(unstructuredObj.Object, "status", "conditions")
+	unstructuredObj, err := convertToUnstructured(obj)
 	if err != nil {
-		return fmt.Errorf("failed to extract conditions from object: %w", err)
-	}
-	if !found {
-		return fmt.Errorf("no status.conditions[] found in object")
+		return err
 	}
 
-	condElems := make([]GenericCondition, 0, len(conditions))
-	for i, c := range conditions {
-		condMap, ok := c.(map[string]any)
-		if !ok {
-			return fmt.Errorf("failed to convert condition#%d to map (type: %T)", i, c)
-		}
-		// convert untyped map to GenericCondition
-		b, err := json.Marshal(condMap)
-		if err != nil {
-			return fmt.Errorf("failed to marshal condition#%d: %w", i, err)
-		}
-		var c GenericCondition
-		if err := json.Unmarshal(b, &c); err != nil {
-			return fmt.Errorf("failed to unmarshal condition#%d: %w", i, err)
-		}
-		condElems = append(condElems, c)
+	conditions, err := extractConditions(unstructuredObj)
+	if err != nil {
+		return err
 	}
 
-	sort.Slice(condElems, func(i, j int) bool {
-		return byCondition(condElems[i], condElems[j])
+	sort.Slice(conditions, func(i, j int) bool {
+		return byCondition(conditions[i], conditions[j])
 	})
 
 	objMeta, err := meta.Accessor(obj)
@@ -132,7 +103,54 @@ func printObject(obj runtime.Object) error {
 	}
 	fmt.Printf("%s/%s\n", obj.GetObjectKind().GroupVersionKind().Kind, objMeta.GetName())
 
-	printConditions(condElems)
+	printConditions(conditions)
+	return nil
+}
+
+func convertToUnstructured(obj runtime.Object) (*unstructured.Unstructured, error) {
+	unstructuredObj, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		objJSON, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert object to unstructured: %w", err)
+		}
+		unstructuredObj = &unstructured.Unstructured{Object: objJSON}
+	}
+	return unstructuredObj, nil
+}
+
+func extractConditions(unstructuredObj *unstructured.Unstructured) ([]GenericCondition, error) {
+	conditions, found, err := unstructured.NestedSlice(unstructuredObj.Object, "status", "conditions")
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract conditions from object: %w", err)
+	}
+	if !found {
+		return nil, fmt.Errorf("no status.conditions[] found in object")
+	}
+
+	var condElems []GenericCondition
+	for i, c := range conditions {
+		condMap, ok := c.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("failed to convert condition#%d to map (type: %T)", i, c)
+		}
+		var cond GenericCondition
+		if err := convertMapToStruct(condMap, &cond); err != nil {
+			return nil, fmt.Errorf("failed to convert condition#%d: %w", i, err)
+		}
+		condElems = append(condElems, cond)
+	}
+	return condElems, nil
+}
+
+func convertMapToStruct(condMap map[string]interface{}, cond *GenericCondition) error {
+	b, err := json.Marshal(condMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal condition: %w", err)
+	}
+	if err := json.Unmarshal(b, cond); err != nil {
+		return fmt.Errorf("failed to unmarshal condition: %w", err)
+	}
 	return nil
 }
 
@@ -171,23 +189,21 @@ func statusColor(status metav1.ConditionStatus) func(string) string {
 
 func formatConditionDetails(cond GenericCondition) string {
 	color := statusColor(cond.Status)
-	var detail string
+	var details []string
 	if cond.Reason != "" {
-		detail += fmt.Sprintf("%s\n", color(bold.Sprint(cond.Reason)))
+		details = append(details, color(bold.Sprintf("Reason: %s", cond.Reason)))
 	}
 	if cond.Message != "" {
-		cond.Message = wrapString(cond.Message, 80)
-		cond.Message = color("(" + cond.Message + ")")
-		detail += fmt.Sprintf("%s\n", cond.Message)
+		wrappedMessage := wrapString(cond.Message, 80)
+		details = append(details, color(fmt.Sprintf("Message: (%s)", wrappedMessage)))
 	}
 	if cond.LastTransitionTime != nil {
-		detail += fmt.Sprintf("* Last Transition: %s (%s ago)\n", cond.LastTransitionTime.Time.Format(time.RFC3339), time.Since(cond.LastTransitionTime.Time).Round(time.Second))
+		details = append(details, fmt.Sprintf("* Last Transition: %s (%s ago)", cond.LastTransitionTime.Time.Format(time.RFC3339), time.Since(cond.LastTransitionTime.Time).Round(time.Second)))
 	}
 	if cond.LastUpdateTime != nil {
-		detail += fmt.Sprintf("* Last Update: %s (%s ago)\n", cond.LastUpdateTime.Time.Format(time.RFC3339), time.Since(cond.LastUpdateTime.Time).Round(time.Second))
+		details = append(details, fmt.Sprintf("* Last Update: %s (%s ago)", cond.LastUpdateTime.Time.Format(time.RFC3339), time.Since(cond.LastUpdateTime.Time).Round(time.Second)))
 	}
-	detail = strings.TrimSuffix(detail, "\n")
-	return detail
+	return strings.Join(details, "\n")
 }
 
 func byCondition(i, j GenericCondition) bool {
@@ -196,8 +212,7 @@ func byCondition(i, j GenericCondition) bool {
 		"Ready":     -2,
 		"Succeeded": -1, // e.g. Job
 	}
-	priI := typePriority[i.Type]
-	priJ := typePriority[j.Type]
+	priI, priJ := typePriority[i.Type], typePriority[j.Type]
 
 	if priI != priJ {
 		return priI < priJ
@@ -219,8 +234,7 @@ func byCondition(i, j GenericCondition) bool {
 	return timeI.After(timeJ)
 }
 
-// wrapString wraps the input string to a given width n, splitting long words as needed.
-func wrapString[T ~string](input T, n int) T {
+func wrapString(input string, n int) string {
 	if n <= 0 {
 		return input
 	}
@@ -233,5 +247,5 @@ func wrapString[T ~string](input T, n int) T {
 		result.WriteRune(char)
 	}
 
-	return T(result.String())
+	return result.String()
 }
