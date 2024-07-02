@@ -227,17 +227,14 @@ func wrapString[T ~string](input T, n int, colorize func(string) string) T {
 
 	var result strings.Builder
 	var line strings.Builder
-	lineLength := 0
 
 	for _, char := range input {
 		line.WriteRune(char)
-		lineLength++
 
-		if lineLength >= n || char == '\n' {
+		if line.Len() >= n || char == '\n' {
 			result.WriteString(colorize(line.String()))
-			line.Reset()
 			result.WriteString("\n")
-			lineLength = 0
+			line.Reset()
 		}
 	}
 
