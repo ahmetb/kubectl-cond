@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/utils/ptr"
@@ -36,16 +38,35 @@ import (
 
 var (
 	bold = color.New(color.Bold)
+	gray = color.New(color.FgHiBlack)
+
+	// double-negated well-known conditions
+	negativePolarityNodeConditions = sets.New(
+		// kubernetes builtin Node conditions
+		"MemoryPressure",
+		"DiskPressure",
+		"PIDPressure",
+
+		// node-problem-detector Node conditions
+		"ReadonlyFilesystem",
+		"KernelDeadlock",
+		"FrequentKubeletRestart",
+		"FrequentDockerRestart",
+		"FrequentContainerdRestart",
+		"KubeletUnhealthy",
+		"ContainerRuntimeUnhealthy",
+	)
 )
 
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
 
 	cmd := &cobra.Command{
-		Use:   "kubectl cond",
-		Short: "View Kubernetes resource conditions",
-		Args:  cobra.MinimumNArgs(1),
-		RunE:  runFunc(configFlags),
+		Use:          "kubectl cond",
+		Short:        "View Kubernetes resource conditions",
+		Args:         cobra.MinimumNArgs(1),
+		SilenceUsage: true,
+		RunE:         runFunc(configFlags),
 	}
 	configFlags.AddFlags(cmd.PersistentFlags())
 	if err := cmd.Execute(); err != nil {
@@ -63,12 +84,17 @@ func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command
 			NamespaceParam(namespace).DefaultNamespace().
 			ResourceTypeOrNameArgs(true, posArgs...).
 			Flatten().
+			ContinueOnError().
 			Do().
 			Visit(func(info *resource.Info, err error) error {
 				if err != nil {
 					return err
 				}
-				return printObject(info.Object)
+				if err := printObject(info.Object); err != nil {
+					return fmt.Errorf("failed to print object %s %s/%s: %w",
+						info.Object.GetObjectKind().GroupVersionKind().Kind, info.Namespace, info.Name, err)
+				}
+				return nil
 			})
 	}
 }
@@ -80,6 +106,7 @@ type GenericCondition struct {
 	Message            string                 `json:"message"`
 	LastUpdateTime     *metav1.Time           `json:"lastUpdateTime"`
 	LastTransitionTime *metav1.Time           `json:"lastTransitionTime"`
+	LastHeartbeatTime  *metav1.Time           `json:"lastHeartbeatTime"`
 	ObservedGeneration int64                  `json:"observedGeneration"`
 }
 
@@ -130,11 +157,14 @@ func printObject(obj runtime.Object) error {
 	if err != nil {
 		return fmt.Errorf("failed to extract object metadata: %w", err)
 	}
-	fmt.Printf("%s/%s\n", obj.GetObjectKind().GroupVersionKind().Kind, objMeta.GetName())
+	kind := obj.GetObjectKind().GroupVersionKind().Kind
+	fmt.Printf(bold.Sprintf("%s/%s\n", kind, objMeta.GetName()))
 
 	printConditions(condElems)
 	return nil
 }
+
+type colorFunc func(string) string
 
 func printConditions(conditions []GenericCondition) {
 	table := tablewriter.NewWriter(os.Stdout)
@@ -144,15 +174,19 @@ func printConditions(conditions []GenericCondition) {
 	table.SetRowLine(true)
 
 	for _, cond := range conditions {
-		condType := statusColor(cond.Status)(cond.Type) + "\n" + "(" + string(cond.Status) + ")"
-		details := formatConditionDetails(cond)
+		colorFn := statusColor(cond.Type, cond.Status)
+		condType := colorFn(cond.Type) + "\n" + "(" + string(cond.Status) + ")"
+		details := formatConditionDetails(colorFn, cond)
 		table.Append([]string{condType, details})
 	}
 
 	table.Render()
 }
 
-func statusColor(status metav1.ConditionStatus) func(string) string {
+func statusColor(condType string, status metav1.ConditionStatus) func(string) string {
+
+	status = invertPolarity(condType, status)
+
 	var statusColor *color.Color
 	switch status {
 	case metav1.ConditionTrue:
@@ -169,22 +203,45 @@ func statusColor(status metav1.ConditionStatus) func(string) string {
 	}
 }
 
-func formatConditionDetails(cond GenericCondition) string {
-	colorize := statusColor(cond.Status)
+func invertPolarity(condType string, status metav1.ConditionStatus) metav1.ConditionStatus {
+	if status == metav1.ConditionUnknown || !negativePolarityNodeConditions.Has(condType) {
+		return status
+	}
+
+	if status == metav1.ConditionTrue {
+		return metav1.ConditionFalse
+	} else {
+		return metav1.ConditionTrue
+	}
+}
+
+func formatConditionDetails(colorize colorFunc, cond GenericCondition) string {
 	var detail string
 	if cond.Reason != "" {
 		detail += fmt.Sprintf("%s\n", colorize(bold.Sprint(cond.Reason)))
 	}
 	if cond.Message != "" {
 		cond.Message = wrapString(cond.Message, 80, colorize)
-		cond.Message = colorize("(") + cond.Message + colorize(")")
+		cond.Message = colorize(cond.Message)
 		detail += fmt.Sprintf("%s\n", cond.Message)
 	}
+
+	expressTime := func(t *metav1.Time) string {
+		return fmt.Sprintf("%s %s",
+			humanize.RelTime(t.Time, time.Now(), "ago", "from now"),
+			gray.Sprintf("(%s)", t.Time.Format(time.RFC3339)),
+		)
+	}
+
 	if cond.LastTransitionTime != nil {
-		detail += fmt.Sprintf("* Last Transition: %s (%s ago)\n", cond.LastTransitionTime.Time.Format(time.RFC3339), time.Since(cond.LastTransitionTime.Time).Round(time.Second))
+		detail += fmt.Sprintf("Last Transition: %s\n", expressTime(cond.LastTransitionTime))
 	}
 	if cond.LastUpdateTime != nil {
-		detail += fmt.Sprintf("* Last Update: %s (%s ago)\n", cond.LastUpdateTime.Time.Format(time.RFC3339), time.Since(cond.LastUpdateTime.Time).Round(time.Second))
+		detail += fmt.Sprintf("Last Transition: %s\n", expressTime(cond.LastUpdateTime))
+	}
+	if cond.LastHeartbeatTime != nil {
+		// especially for corev1.Node
+		detail += fmt.Sprintf("Last Heartbeat: %s\n", expressTime(cond.LastHeartbeatTime))
 	}
 	detail = strings.TrimSuffix(detail, "\n")
 	return detail
@@ -205,12 +262,16 @@ func byCondition(i, j GenericCondition) bool {
 
 	// Rule 2: status=False first, then Unknown, then True
 	statusOrder := map[metav1.ConditionStatus]int{
-		metav1.ConditionFalse:   0,
-		metav1.ConditionUnknown: 1,
-		metav1.ConditionTrue:    2,
+		metav1.ConditionFalse:   0, // assumption: False means bad things
+		metav1.ConditionUnknown: 1, // assumption: Unknown means potentially bad things
+		metav1.ConditionTrue:    2, // assumption: True means good things
 	}
-	if statusOrder[i.Status] != statusOrder[j.Status] {
-		return statusOrder[i.Status] < statusOrder[j.Status]
+
+	// calculate the semantic status of the condition
+	iStatus := invertPolarity(i.Type, i.Status)
+	jStatus := invertPolarity(j.Type, j.Status)
+	if iStatus != jStatus {
+		return statusOrder[iStatus] < statusOrder[jStatus]
 	}
 
 	// Rule 3: Sort by the last time it got changed in descending order

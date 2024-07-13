@@ -3,12 +3,12 @@ module github.com/ahmetb/kubectl-cond
 go 1.22.1
 
 require (
+	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.17.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/spf13/cobra v1.7.0
 	k8s.io/apimachinery v0.30.2
 	k8s.io/cli-runtime v0.30.2
-	k8s.io/kubectl v0.30.2
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 )
 
@@ -39,7 +39,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
-	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/moby/term v0.0.0-20221205130635-1aeaba878587 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
