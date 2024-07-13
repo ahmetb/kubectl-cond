@@ -1,35 +1,35 @@
 # kubectl cond
 
-A kubectl plugin to print Kubernetes object resource conditions.
+A kubectl plugin to print Kubernetes object resource conditions in
+a more human-readable format.
 
 ## Usage
 
-```shell
+You can specify `kubectl cond` like `kubectl get` to query the conditions of a
+specific object by resource kind, name, namespace, list by category, or by file:
+
+```text
 kubectl cond <object-type> <object-name>
+kubectl cond nodes
+kubectl cond -f <manifest.yaml>
+kubectl cond all -n <namespace>
 ```
 
 ## Example
 
-```text
-kubectl cond node node-1
+![kubectl cond example](./img/kubectl-cond-example.png)
 
-+----------------+----------------------------------------------------------------+
-| CONDITION TYPE |                            DETAILS                             |
-+----------------+----------------------------------------------------------------+
-| Ready          | KubeletReady                                                   |
-| (True)         | (kubelet is posting ready status)                              |
-|                | * Last Transition: 2024-05-12T08:20:20-07:00 (1180h59m55s ago) |
-+----------------+----------------------------------------------------------------+
-| MemoryPressure | KubeletHasSufficientMemory                                     |
-| (False)        | (kubelet has sufficient memory available)                      |
-|                | * Last Transition: 2024-05-12T08:20:20-07:00 (1180h59m55s ago) |
-+----------------+----------------------------------------------------------------+
-| DiskPressure   | KubeletHasNoDiskPressure                                       |
-| (False)        | (kubelet has no disk pressure)                                 |
-|                | * Last Transition: 2024-05-12T08:20:20-07:00 (1180h59m55s ago) |
-+----------------+----------------------------------------------------------------+
-| PIDPressure    | KubeletHasSufficientPID                                        |
-| (False)        | (kubelet has sufficient PID available)                         |
-|                | * Last Transition: 2024-05-12T08:20:20-07:00 (1180h59m55s ago) |
-+----------------+----------------------------------------------------------------+
+## Installation
+
+Install this plugin using [Krew](https://krew.sigs.k8s.io/).
+
+```shell
+kubectl krew install cond
 ```
+
+Or, download the binary from the **Releases** page and move it somewhere on your
+`PATH`.
+
+## License
+
+This project is distributed under [Apache 2.0 License](./LICENSE).
