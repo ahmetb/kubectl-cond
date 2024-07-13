@@ -1,6 +1,4 @@
-before:
-  hooks:
-  - go mod download
+version: 2
 builds:
 - id: kubectl-cond
   main: .
