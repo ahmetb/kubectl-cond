@@ -237,7 +237,7 @@ func formatConditionDetails(colorize colorFunc, cond GenericCondition) string {
 		detail += fmt.Sprintf("Last Transition: %s\n", expressTime(cond.LastTransitionTime))
 	}
 	if cond.LastUpdateTime != nil {
-		detail += fmt.Sprintf("Last Transition: %s\n", expressTime(cond.LastUpdateTime))
+		detail += fmt.Sprintf("Last Update: %s\n", expressTime(cond.LastUpdateTime))
 	}
 	if cond.LastHeartbeatTime != nil {
 		// especially for corev1.Node
