@@ -45,6 +45,7 @@ var (
 		// kubernetes builtin Node conditions
 		"MemoryPressure",
 		"DiskPressure",
+		"NetworkUnavailable",
 		"PIDPressure",
 
 		// node-problem-detector Node conditions
