@@ -59,6 +59,8 @@ var (
 	)
 )
 
+var allNamespacesFlag bool
+
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
 
@@ -69,6 +71,7 @@ func main() {
 		SilenceUsage: true,
 		RunE:         runFunc(configFlags),
 	}
+	cmd.PersistentFlags().BoolVarP(&allNamespacesFlag, "all-namespaces", "A", false, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
 	configFlags.AddFlags(cmd.PersistentFlags())
 	if err := cmd.Execute(); err != nil {
 		fmt.Printf("command failed: %v\n", err)
@@ -79,13 +82,23 @@ func main() {
 
 func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, posArgs []string) error {
-		namespace := ptr.Deref(configFlags.Namespace, "")
-		if namespace == "" {
-			namespace, _, _ = configFlags.ToRawKubeConfigLoader().Namespace()
+
+		clientCfg := configFlags.ToRawKubeConfigLoader()
+		kubeconfigNamespace, _, err := clientCfg.Namespace()
+		if err != nil {
+			return fmt.Errorf("failed to determine namespace from kubeconfig: %w", err)
 		}
-		return resource.NewBuilder(configFlags).
+
+		rb := resource.NewBuilder(configFlags)
+
+		namespace := ptr.Deref(configFlags.Namespace, "")
+		if namespace != "" {
+			rb.NamespaceParam(namespace)
+		} else if kubeconfigNamespace != "" {
+			rb.NamespaceParam(kubeconfigNamespace)
+		}
+		return rb.DefaultNamespace().AllNamespaces(allNamespacesFlag).
 			Unstructured().
-			NamespaceParam(namespace).DefaultNamespace().
 			ResourceTypeOrNameArgs(true, posArgs...).
 			Flatten().
 			ContinueOnError().
@@ -162,7 +175,13 @@ func printObject(obj runtime.Object) error {
 		return fmt.Errorf("failed to extract object metadata: %w", err)
 	}
 	kind := obj.GetObjectKind().GroupVersionKind().Kind
-	fmt.Printf(bold.Sprintf("%s/%s\n", kind, objMeta.GetName()))
+	fmt.Printf(bold.Sprintf("%s", kind))
+	if objMeta.GetNamespace() != "" {
+		fmt.Printf(bold.Sprintf(" %s/%s", objMeta.GetNamespace(), objMeta.GetName()))
+	} else {
+		fmt.Printf(bold.Sprintf(" %s", objMeta.GetName()))
+	}
+	fmt.Println()
 
 	printConditions(condElems)
 	return nil
