@@ -80,6 +80,9 @@ func main() {
 func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, posArgs []string) error {
 		namespace := ptr.Deref(configFlags.Namespace, "")
+		if namespace == "" {
+			namespace, _, _ = configFlags.ToRawKubeConfigLoader().Namespace()
+		}
 		return resource.NewBuilder(configFlags).
 			Unstructured().
 			NamespaceParam(namespace).DefaultNamespace().
