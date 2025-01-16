@@ -60,6 +60,7 @@ var (
 )
 
 var allNamespacesFlag bool
+var filenameOpts = &resource.FilenameOptions{}
 
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
@@ -67,11 +68,14 @@ func main() {
 	cmd := &cobra.Command{
 		Use:          "kubectl cond",
 		Short:        "View Kubernetes resource conditions",
-		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE:         runFunc(configFlags),
 	}
 	cmd.PersistentFlags().BoolVarP(&allNamespacesFlag, "all-namespaces", "A", false, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
+	cmd.PersistentFlags().StringSliceVarP(&filenameOpts.Filenames, "filename", "f", nil, "Filename, directory, or URL to files identifying the resource to get from a server.")
+	cmd.PersistentFlags().BoolVar(&filenameOpts.Recursive, "recursive", false, "Process the directory used in -f, --filename recursively. Useful when you want to manage related manifests organized within the same directory.")
+	cmd.PersistentFlags().StringVar(&filenameOpts.Kustomize, "kustomize", "", "Process a kustomization directory. This flag can't be used together with -f or -R.")
+
 	configFlags.AddFlags(cmd.PersistentFlags())
 	if err := cmd.Execute(); err != nil {
 		fmt.Printf("command failed: %v\n", err)
@@ -97,9 +101,12 @@ func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command
 		} else if kubeconfigNamespace != "" {
 			rb.NamespaceParam(kubeconfigNamespace)
 		}
-		return rb.DefaultNamespace().AllNamespaces(allNamespacesFlag).
+		return rb.DefaultNamespace().
+			AllNamespaces(allNamespacesFlag).
 			Unstructured().
 			ResourceTypeOrNameArgs(true, posArgs...).
+			FilenameParam(false, filenameOpts).
+			Latest().
 			Flatten().
 			ContinueOnError().
 			Do().
