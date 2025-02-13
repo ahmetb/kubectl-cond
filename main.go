@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -59,8 +60,11 @@ var (
 	)
 )
 
-var allNamespacesFlag bool
-var filenameOpts = &resource.FilenameOptions{}
+var (
+	allNamespacesFlag bool
+	filenameOpts      = &resource.FilenameOptions{}
+	selectorOpt       = labels.Everything().String()
+)
 
 func main() {
 	configFlags := genericclioptions.NewConfigFlags(true)
@@ -75,6 +79,7 @@ func main() {
 	cmd.PersistentFlags().StringSliceVarP(&filenameOpts.Filenames, "filename", "f", nil, "Filename, directory, or URL to files identifying the resource to get from a server.")
 	cmd.PersistentFlags().BoolVar(&filenameOpts.Recursive, "recursive", false, "Process the directory used in -f, --filename recursively. Useful when you want to manage related manifests organized within the same directory.")
 	cmd.PersistentFlags().StringVar(&filenameOpts.Kustomize, "kustomize", "", "Process a kustomization directory. This flag can't be used together with -f or -R.")
+	cmd.PersistentFlags().StringVarP(&selectorOpt, "selector", "l", "", "Selector (label query) to filter on, supports '=', '==', '!=', 'in', 'notin'.(e.g. -l key1=value1,key2=value2,key3 in (value3)). Matching objects must satisfy all of the specified label constraints.")
 
 	configFlags.AddFlags(cmd.PersistentFlags())
 	if err := cmd.Execute(); err != nil {
@@ -106,6 +111,7 @@ func runFunc(configFlags *genericclioptions.ConfigFlags) func(cmd *cobra.Command
 			Unstructured().
 			ResourceTypeOrNameArgs(true, posArgs...).
 			FilenameParam(false, filenameOpts).
+			LabelSelectorParam(selectorOpt).
 			Latest().
 			Flatten().
 			ContinueOnError().
