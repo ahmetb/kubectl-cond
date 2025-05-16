@@ -7,8 +7,8 @@ require (
 	github.com/fatih/color v1.17.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/spf13/cobra v1.7.0
-	k8s.io/apimachinery v0.30.2
-	k8s.io/cli-runtime v0.30.2
+	k8s.io/apimachinery v0.33.1
+	k8s.io/cli-runtime v0.33.1
 	k8s.io/utils v0.0.0-20250502105355-0f33e8f1c979
 )
 
