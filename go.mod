@@ -6,7 +6,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.17.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.9.1
 	k8s.io/apimachinery v0.30.2
 	k8s.io/cli-runtime v0.30.2
 	k8s.io/utils v0.0.0-20250502105355-0f33e8f1c979
@@ -46,7 +46,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	golang.org/x/net v0.23.0 // indirect
