@@ -6,7 +6,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.18.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 	k8s.io/apimachinery v0.34.2
 	k8s.io/cli-runtime v0.34.2
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
