@@ -188,21 +188,21 @@ func printObject(obj runtime.Object) error {
 		return fmt.Errorf("failed to extract object metadata: %w", err)
 	}
 	kind := obj.GetObjectKind().GroupVersionKind().Kind
-	fmt.Printf(bold.Sprintf("%s", kind))
+	fmt.Print(bold.Sprintf("%s", kind))
 	if objMeta.GetNamespace() != "" {
-		fmt.Printf(bold.Sprintf(" %s/%s", objMeta.GetNamespace(), objMeta.GetName()))
+		fmt.Print(bold.Sprintf(" %s/%s", objMeta.GetNamespace(), objMeta.GetName()))
 	} else {
-		fmt.Printf(bold.Sprintf(" %s", objMeta.GetName()))
+		fmt.Print(bold.Sprintf(" %s", objMeta.GetName()))
 	}
 	fmt.Println()
 
-	printConditions(condElems)
+	printConditions(obj, condElems)
 	return nil
 }
 
 type colorFunc func(string) string
 
-func printConditions(conditions []GenericCondition) {
+func printConditions(obj runtime.Object, conditions []GenericCondition) {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Condition Type", "Details"})
 	table.SetColWidth(100)
@@ -212,6 +212,9 @@ func printConditions(conditions []GenericCondition) {
 	for _, cond := range conditions {
 		colorFn := statusColor(cond.Type, cond.Status)
 		condType := colorFn(cond.Type) + "\n" + "(" + string(cond.Status) + ")"
+		if o, ok := obj.(metav1.Object); ok && cond.ObservedGeneration != 0 && o.GetGeneration() != cond.ObservedGeneration {
+			condType += "\n" + gray.Sprintf("Outdated")
+		}
 		details := formatConditionDetails(colorFn, cond)
 		table.Append([]string{condType, details})
 	}
